@@ -121,21 +121,39 @@ module Plucky
     # Private
     def hash_merge(oldhash, newhash)
       merge_compound_or_clauses!(oldhash, newhash)
-      merge_conflicts_to_and_clause!(oldhash, newhash) if Plucky.merge_conflicts_to_and_clause?
-      oldhash.merge(newhash) do |key, oldval, newval|
-        old_is_hash = oldval.instance_of? Hash
-        new_is_hash = newval.instance_of? Hash
 
-        if oldval == newval
-          oldval
-        elsif old_is_hash && new_is_hash
-          hash_merge(oldval, newval)
-        elsif old_is_hash
-          modifier_merge(oldval, newval)
-        elsif new_is_hash
-          modifier_merge(newval, oldval)
+      (oldhash.keys | newhash.keys).reduce({}) do |hash, key|
+        if oldhash.key?(key) && newhash.key?(key)
+          resolve_conflict(hash, key, oldhash[key], newhash[key])
+        elsif oldhash.key?(key)
+          hash[key] = oldhash[key]
+        elsif newhash.key?(key)
+          hash[key] = newhash[key]
+        end
+        hash
+      end
+    end
+
+    # Private
+    def resolve_conflict(hash, key, oldval, newval)
+      old_is_hash = oldval.instance_of? Hash
+      new_is_hash = newval.instance_of? Hash
+
+      if oldval == newval
+        hash[key] = oldval
+      elsif old_is_hash && new_is_hash
+        hash[key] = hash_merge(oldval, newval)
+      elsif old_is_hash
+        hash[key] = modifier_merge(oldval, newval)
+      elsif new_is_hash
+        hash[key] = modifier_merge(newval, oldval)
+      else
+        if Plucky.merge_conflicts_to_and_clause?
+          hash[:$and] ||= []
+          hash[:$and] << { key => oldval }
+          hash[:$and] << { key => newval }
         else
-          merge_values_into_array(oldval, newval)
+          hash[key] = merge_values_into_array(oldval, newval)
         end
       end
     end
@@ -154,23 +172,6 @@ module Plucky
       elsif old_or && newhash[:$and]
         if newhash[:$and].any? {|v| v.key? :$or }
           newhash[:$and] << {:$or => oldhash.delete(:$or)}
-        end
-      end
-    end
-
-    # Private
-    def merge_conflicts_to_and_clause!(oldhash, newhash)
-      keys = oldhash.keys.reject { |k| Plucky.modifier?(k) } & newhash.keys.reject { |k| Plucky.modifier?(k) }
-      keys.each do |key|
-        oldval = oldhash.delete(key)
-        newval = newhash.delete(key)
-
-        if oldval == newval
-          oldhash[key] = oldval
-        else
-          oldhash[:$and] ||= []
-          oldhash[:$and] << { key => oldval }
-          oldhash[:$and] << { key => newval }
         end
       end
     end

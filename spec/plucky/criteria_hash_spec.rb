@@ -243,6 +243,7 @@ describe Plucky::CriteriaHash do
       it "correctly merges arrays and non-arrays" do
         c1 = described_class.new(:foo => 'bar')
         c2 = described_class.new(:foo => %w[bar baz])
+        # binding.pry
         c1.merge(c2).source.should eq(:$and => [{ :foo => 'bar' }, { :foo => { :$in => %w[bar baz] }}])
         c2.merge(c1).source.should eq(:$and => [{ :foo => 'bar' }, { :foo => { :$in => %w[bar baz] }}])
       end
