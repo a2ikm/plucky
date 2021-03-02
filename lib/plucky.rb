@@ -30,6 +30,14 @@ module Plucky
     end
   end
 
+  def self.merge_conflicts_to_and_clause?
+    !!@merge_conflicts_to_and_clause
+  end
+
+  def self.merge_conflicts_to_and_clause=(bool)
+    @merge_conflicts_to_and_clause = bool
+  end
+
   # Private
   ModifierString = '$'
 

@@ -121,6 +121,7 @@ module Plucky
     # Private
     def hash_merge(oldhash, newhash)
       merge_compound_or_clauses!(oldhash, newhash)
+      merge_conflicts_to_and_clause!(oldhash, newhash) if Plucky.merge_conflicts_to_and_clause?
       oldhash.merge(newhash) do |key, oldval, newval|
         old_is_hash = oldval.instance_of? Hash
         new_is_hash = newval.instance_of? Hash
@@ -153,6 +154,23 @@ module Plucky
       elsif old_or && newhash[:$and]
         if newhash[:$and].any? {|v| v.key? :$or }
           newhash[:$and] << {:$or => oldhash.delete(:$or)}
+        end
+      end
+    end
+
+    # Private
+    def merge_conflicts_to_and_clause!(oldhash, newhash)
+      keys = oldhash.keys.reject { |k| Plucky.modifier?(k) } & newhash.keys.reject { |k| Plucky.modifier?(k) }
+      keys.each do |key|
+        oldval = oldhash.delete(key)
+        newval = newhash.delete(key)
+
+        if oldval == newval
+          oldhash[key] = oldval
+        else
+          oldhash[:$and] ||= []
+          oldhash[:$and] << { key => oldval }
+          oldhash[:$and] << { key => newval }
         end
       end
     end

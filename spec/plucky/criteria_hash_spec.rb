@@ -211,6 +211,120 @@ describe Plucky::CriteriaHash do
         ]
       end
     end
+
+    context "with Plucky.merge_conflicts_to_and_clause = true" do
+      around do |example|
+        begin
+          Plucky.merge_conflicts_to_and_clause = true
+          example.run
+        ensure
+          Plucky.merge_conflicts_to_and_clause = false
+        end
+      end
+
+      it "works when no keys match" do
+        c1 = described_class.new(:foo => 'bar')
+        c2 = described_class.new(:baz => 'wick')
+        c1.merge(c2).source.should eq(:foo => 'bar', :baz => 'wick')
+      end
+
+      it "turns matching keys with simple values into array" do
+        c1 = described_class.new(:foo => 'bar')
+        c2 = described_class.new(:foo => 'baz')
+        c1.merge(c2).source.should eq(:$and => [{ :foo => 'bar'}, { :foo => 'baz' }])
+      end
+
+      it "uniques matching key values" do
+        c1 = described_class.new(:foo => 'bar')
+        c2 = described_class.new(:foo => 'bar')
+        c1.merge(c2).source.should eq(:foo => 'bar')
+      end
+
+      it "correctly merges arrays and non-arrays" do
+        c1 = described_class.new(:foo => 'bar')
+        c2 = described_class.new(:foo => %w[bar baz])
+        c1.merge(c2).source.should eq(:$and => [{ :foo => 'bar' }, { :foo => { :$in => %w[bar baz] }}])
+        c2.merge(c1).source.should eq(:$and => [{ :foo => 'bar' }, { :foo => { :$in => %w[bar baz] }}])
+      end
+
+      it "correctly merges two bson object ids" do
+        id1 = BSON::ObjectId.new
+        id2 = BSON::ObjectId.new
+        c1 = described_class.new(:foo => id1)
+        c2 = described_class.new(:foo => id2)
+        c1.merge(c2).source.should eq(:$and => [{ :foo => id1 }, { :foo => id2 }])
+      end
+
+      it "correctly merges array and an object id" do
+        id1 = BSON::ObjectId.new
+        id2 = BSON::ObjectId.new
+        c1 = described_class.new(:foo => [id1])
+        c2 = described_class.new(:foo => id2)
+        c1.merge(c2).source.should eq(:$and => [{ :foo => { :$in => [id1] }}, { :foo => id2 }])
+        c2.merge(c1).source.should eq(:$and => [{ :foo => { :$in => [id1] }}, { :foo => id2 }])
+      end
+
+      it "is able to merge two modifier hashes" do
+        c1 = described_class.new(:$in => [1, 2])
+        c2 = described_class.new(:$in => [2, 3])
+        c1.merge(c2).source.should eq(:$in => [1, 2, 3])
+      end
+
+      it "is able to merge two modifier hashes with hash values" do
+        c1 = described_class.new(:arr => {:$elemMatch => {:foo => 'bar'}})
+        c2 = described_class.new(:arr => {:$elemMatch => {:omg => 'ponies'}})
+        c1.merge(c2).source.should eq(:$and => [{ :arr => {:$elemMatch => {:foo => 'bar'}}}, { :arr => {:$elemMatch => {:omg => 'ponies'}}}])
+      end
+
+      it "merges matching keys with a single modifier" do
+        c1 = described_class.new(:foo => {:$in => [1, 2, 3]})
+        c2 = described_class.new(:foo => {:$in => [1, 4, 5]})
+        c1.merge(c2).source.should eq(:$and => [{ :foo => {:$in => [1, 2, 3] }}, { :foo => {:$in => [1, 4, 5] }}])
+      end
+
+      it "merges matching keys with multiple modifiers" do
+        c1 = described_class.new(:foo => {:$in => [1, 2, 3]})
+        c2 = described_class.new(:foo => {:$all => [1, 4, 5]})
+        c1.merge(c2).source.should eq(:$and => [{ :foo => {:$in => [1, 2, 3]} }, { :foo => {:$all => [1, 4, 5]} }])
+      end
+
+      it "does not update mergee" do
+        c1 = described_class.new(:foo => 'bar')
+        c2 = described_class.new(:foo => 'baz')
+        c1.merge(c2).should_not equal(c1)
+        c1[:foo].should == 'bar'
+      end
+
+      it "merges two hashes with the same key, but nil values as nil" do
+        c1 = described_class.new(:foo => nil)
+        c2 = described_class.new(:foo => nil)
+        c1.merge(c2).source.should == { :foo => nil }
+      end
+
+      it "merges two hashes with the same key, but false values as false" do
+        c1 = described_class.new(:foo => false)
+        c2 = described_class.new(:foo => false)
+        c1.merge(c2).source.should == { :foo => false }
+      end
+
+      it "merges two hashes with the same key, but different values with $in" do
+        c1 = described_class.new(:foo => false)
+        c2 = described_class.new(:foo => true)
+        c1.merge(c2).source.should == { :$and => [{ :foo => false }, { :foo => true }]}
+      end
+
+      it "merges two hashes with different keys and different values properly" do
+        c1 = described_class.new(:foo => 1)
+        c2 = described_class.new(:bar => 2)
+        c1.merge(c2).source.should == { :foo => 1, :bar => 2 }
+      end
+
+      it "merges two sets" do
+        c1 = described_class.new(:foo => Set.new([1, 2]))
+        c2 = described_class.new(:foo => Set.new([2, 3]))
+        c1.merge(c2).source.should == { :$and => [{ :foo => { :$in => [1,2] }}, { :foo => { :$in => [2,3] }}] }
+      end
+    end
   end
 
   context "#merge!" do
